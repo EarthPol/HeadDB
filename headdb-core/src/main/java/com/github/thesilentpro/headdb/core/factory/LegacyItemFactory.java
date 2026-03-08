@@ -49,7 +49,9 @@ public class LegacyItemFactory implements ItemFactory {
 
         String cost = String.valueOf(plugin.getCfg().getHeadOrCategoryPrice(head.getId(), head.getCategory().toLowerCase(Locale.ROOT)));
         Component name = plugin.getCfg().getHeadName().replaceText(builder -> builder.matchLiteral("{name}").replacement(head.getName())).replaceText(builder -> builder.matchLiteral("{cost}").replacement(cost));
-        meta.setItemName(ChatColor.translateAlternateColorCodes('&', LegacyComponentSerializer.legacyAmpersand().serialize(name)));
+        String serializedName = ChatColor.translateAlternateColorCodes('&', LegacyComponentSerializer.legacyAmpersand().serialize(name));
+        meta.setItemName(serializedName);
+        meta.setDisplayName(serializedName);
 
         List<Component> lore = new ArrayList<>(plugin.getCfg().getHeadsLore());
         lore.replaceAll(component -> component.replaceText(builder -> builder.matchLiteral("{id}").replacement(String.valueOf(head.getId())))
@@ -75,6 +77,7 @@ public class LegacyItemFactory implements ItemFactory {
 
         if (player.getName() != null) {
             meta.setItemName(player.getName());
+            meta.setDisplayName(player.getName());
         }
 
         item.setItemMeta(meta);
@@ -91,13 +94,21 @@ public class LegacyItemFactory implements ItemFactory {
     @Override
     public Component getNameFromItem(ItemStack item) {
         SkullMeta meta = (SkullMeta) item.getItemMeta();
-        return Component.text(meta.getItemName());
+        String itemName = meta.getItemName();
+        if (itemName == null || itemName.isBlank()) {
+            itemName = meta.getDisplayName();
+        }
+        return itemName != null ? LegacyComponentSerializer.legacySection().deserialize(itemName) : Component.empty();
     }
 
     @Override
     public ItemStack setItemDetails(ItemStack item, Component name, Component... lore) {
         ItemMeta meta = item.getItemMeta();
-        meta.setItemName(name != null ? ChatColor.translateAlternateColorCodes('&', LegacyComponentSerializer.legacyAmpersand().serialize(name)) : null);
+        String serializedName = name != null
+                ? ChatColor.translateAlternateColorCodes('&', LegacyComponentSerializer.legacyAmpersand().serialize(name))
+                : null;
+        meta.setItemName(serializedName);
+        meta.setDisplayName(serializedName);
         meta.setLore(
                 lore != null
                 ? Arrays.stream(lore).map(component -> ChatColor.translateAlternateColorCodes('&', LegacyComponentSerializer.legacyAmpersand().serialize(component))).toList()

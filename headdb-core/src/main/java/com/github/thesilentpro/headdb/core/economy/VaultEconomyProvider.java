@@ -48,7 +48,7 @@ public class VaultEconomyProvider implements EconomyProvider {
             return failed("Amount must be non-negative");
         }
 
-        return CompletableFuture.supplyAsync(() -> economy.has(player, amount));
+        return CompletableFuture.completedFuture(economy.has(player, amount));
     }
 
     @Override
@@ -61,7 +61,7 @@ public class VaultEconomyProvider implements EconomyProvider {
             return failed("Amount must be non-negative");
         }
 
-        return CompletableFuture.supplyAsync(() -> economy.withdrawPlayer(player, amount).transactionSuccess());
+        return CompletableFuture.completedFuture(economy.withdrawPlayer(player, amount).transactionSuccess());
     }
 
     @Override
@@ -74,7 +74,7 @@ public class VaultEconomyProvider implements EconomyProvider {
             return failed("Amount must be non-negative");
         }
 
-        return CompletableFuture.supplyAsync(() -> economy.depositPlayer(player, amount).transactionSuccess());
+        return CompletableFuture.completedFuture(economy.depositPlayer(player, amount).transactionSuccess());
     }
 
     private CompletableFuture<Boolean> failed(String message) {

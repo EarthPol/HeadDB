@@ -8,16 +8,16 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerStorage {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PlayerStorage.class);
     private static final String DB_URL = "jdbc:sqlite:plugins/HeadDB/data/data.db";
 
-    private final Map<UUID, PlayerData> data = new HashMap<>();
+    private final Map<UUID, PlayerData> data = new ConcurrentHashMap<>();
 
     private final PlayerDAO playerDao;
 

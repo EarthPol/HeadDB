@@ -77,10 +77,10 @@ public class HeadDB extends JavaPlugin {
         this.headDatabase.update().thenAcceptAsync(heads -> DATABASE_UPDATE_ACTION.accept(config, heads), Compatibility.getMainThreadExecutor(this));
         this.headApi = new BaseHeadAPI(config.getApiThreads(), headDatabase);
         this.menuManager = new MenuManager(this);
-        this.headDatabase.onReady().thenRunAsync(() -> this.menuManager.registerDefaults(this));
+        this.headDatabase.onReady().thenRunAsync(() -> this.menuManager.registerDefaults(this), Compatibility.getMainThreadExecutor(this));
         this.playerStorage = new PlayerStorage();
         this.playerStorage.load();
-        this.getServer().getScheduler().runTaskTimerAsynchronously(this, () -> this.playerStorage.save(), config.getPlayerStorageSaveInterval() * 20L, config.getPlayerStorageSaveInterval() * 20L);
+        Compatibility.runAsyncRepeating(this, this.playerStorage::save, config.getPlayerStorageSaveInterval() * 20L, config.getPlayerStorageSaveInterval() * 20L);
 
         getServer().getServicesManager().register(HeadAPI.class, headApi, this, ServicePriority.Normal);
 
@@ -102,7 +102,11 @@ public class HeadDB extends JavaPlugin {
 
         // Start updater task
         if (config.isUpdaterEnabled()) {
-            this.getServer().getScheduler().runTaskTimerAsynchronously(this, () -> this.headDatabase.update().thenAccept(heads -> DATABASE_UPDATE_ACTION.accept(config, heads)), 86400L * 20L, 86400L * 20L);
+            Compatibility.runAsyncRepeating(this, () ->
+                    this.headDatabase.update().thenAcceptAsync(heads -> DATABASE_UPDATE_ACTION.accept(config, heads), Compatibility.getMainThreadExecutor(this)),
+                    86400L * 20L,
+                    86400L * 20L
+            );
         }
 
         if (!Compatibility.IS_PAPER) {

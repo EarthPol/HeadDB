@@ -34,7 +34,7 @@ public class MainMenu extends SimplePage {
         super(plugin.getLocalization().getConsoleMessage("menu.main.name").orElse(Component.text("HeadDB").color(NamedTextColor.RED)), 6);
         preventInteraction();
 
-        plugin.getHeadApi().onReady().thenAccept(heads -> {
+        plugin.getHeadApi().onReady().thenAcceptAsync(heads -> {
             LOGGER.debug("RENDER THREAD = {}", Thread.currentThread().getName());
             renderCategoryButtons(plugin, heads);
             renderLocalButton(plugin);
@@ -44,7 +44,7 @@ public class MainMenu extends SimplePage {
             renderInfoButton(plugin);
             fillBorder(this);
             reRender();
-        });
+        }, Compatibility.getMainThreadExecutor(plugin));
     }
 
     private void renderCategoryButtons(HeadDB plugin, List<Head> heads) {
@@ -157,7 +157,7 @@ public class MainMenu extends SimplePage {
                         int page = plugin.getCfg().isTrackPage() ? gui.getGuiRegistry().getCurrentPage(playerId, gui.getKey()).orElse(0) : 0;
                         gui.open(player, page);
                         Compatibility.playSound(player, plugin.getSoundConfig().get("menu.open"));
-                    }, Compatibility.getMainThreadExecutor(plugin))
+                    }, Compatibility.getEntityExecutor(plugin, player))
                     .exceptionally(ex -> {
                         LOGGER.error("Failed to compute favorite heads for: {}", playerId, ex);
                         return null;
@@ -213,7 +213,7 @@ public class MainMenu extends SimplePage {
             Compatibility.playSound(player, plugin.getSoundConfig().get("input.wait"));
             PaperInput.awaitString().then((input, event) -> {
                 event.setCancelled(true);
-                Compatibility.getMainThreadExecutor(plugin).execute(() -> player.performCommand("hdb search " + input));
+                Compatibility.getEntityExecutor(plugin, player).execute(() -> player.performCommand("hdb search " + input));
             }).register(player.getUniqueId());
         }));
     }

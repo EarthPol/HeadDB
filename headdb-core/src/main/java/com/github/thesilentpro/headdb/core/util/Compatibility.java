@@ -7,6 +7,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -14,32 +15,104 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 @SuppressWarnings("deprecation")
 public class Compatibility {
 
     public static final boolean IS_PAPER;
+    public static final boolean IS_FOLIA;
 
     static {
         boolean isPaper;
+        boolean isFolia;
         try {
             Class.forName("com.destroystokyo.paper.profile.PlayerProfile");
             isPaper = true;
         } catch (ClassNotFoundException e) {
             isPaper = false;
         }
+        try {
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            isFolia = true;
+        } catch (ClassNotFoundException e) {
+            isFolia = false;
+        }
         IS_PAPER = isPaper;
+        IS_FOLIA = isFolia;
     }
 
     public static Executor getMainThreadExecutor(JavaPlugin plugin) {
         if (plugin == null) {
             throw new RuntimeException("Plugin instance is null!");
         }
-        if (IS_PAPER) {
+        if (IS_FOLIA) {
+            return r -> plugin.getServer().getGlobalRegionScheduler().execute(plugin, r);
+        } else if (IS_PAPER) {
             return plugin.getServer().getScheduler().getMainThreadExecutor(plugin);
         } else {
             return r -> plugin.getServer().getScheduler().runTask(plugin, r);
         }
+    }
+
+    public static Executor getEntityExecutor(JavaPlugin plugin, Entity entity) {
+        if (plugin == null) {
+            throw new RuntimeException("Plugin instance is null!");
+        }
+        if (entity == null) {
+            throw new RuntimeException("Entity instance is null!");
+        }
+
+        if (!IS_FOLIA) {
+            return getMainThreadExecutor(plugin);
+        }
+
+        return r -> {
+            if (!entity.isValid()) {
+                return;
+            }
+            if (entity instanceof Player player && !player.isOnline()) {
+                return;
+            }
+
+            entity.getScheduler().execute(plugin, r, () -> { }, 1L);
+        };
+    }
+
+    public static Executor getSenderExecutor(JavaPlugin plugin, CommandSender sender) {
+        if (sender instanceof Entity entity) {
+            return getEntityExecutor(plugin, entity);
+        }
+        return getMainThreadExecutor(plugin);
+    }
+
+    public static void runAsyncRepeating(JavaPlugin plugin, Runnable task, long initialDelayTicks, long periodTicks) {
+        if (plugin == null) {
+            throw new RuntimeException("Plugin instance is null!");
+        }
+        if (task == null) {
+            return;
+        }
+
+        if (IS_FOLIA) {
+            plugin.getServer().getAsyncScheduler().runAtFixedRate(
+                    plugin,
+                    scheduledTask -> task.run(),
+                    ticksToMillis(initialDelayTicks),
+                    ticksToMillis(periodTicks),
+                    TimeUnit.MILLISECONDS
+            );
+            return;
+        }
+
+        plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, task, initialDelayTicks, periodTicks);
+    }
+
+    private static long ticksToMillis(long ticks) {
+        if (ticks <= 0L) {
+            return 0L;
+        }
+        return ticks * 50L;
     }
 
     public static String getPluginVersion(JavaPlugin plugin) {

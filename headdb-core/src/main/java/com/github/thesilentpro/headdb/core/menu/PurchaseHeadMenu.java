@@ -61,9 +61,9 @@ public class PurchaseHeadMenu extends SimplePage {
             PaperInput.awaitInteger()
                     .mismatch((input, event) -> {
                         event.setCancelled(true);
-                        Compatibility.getMainThreadExecutor(plugin).execute(() -> {
+                        Compatibility.getEntityExecutor(plugin, entity).execute(() -> {
                             plugin.getLocalization().sendMessage(event.getPlayer(), "invalidNumber", msg -> msg.replaceText(builder -> builder.matchLiteral("{number}").replacement(input)));
-                            Compatibility.playSound((Player) ctx.event().getWhoClicked(), plugin.getSoundConfig().get("purchase.failed"));
+                            Compatibility.playSound(entity, plugin.getSoundConfig().get("purchase.failed"));
                         });
                     })
                     .then((input, event) -> {
@@ -84,23 +84,24 @@ public class PurchaseHeadMenu extends SimplePage {
     private Consumer<ButtonClickContext> handlePurchase(double cost, int amount) {
         return ctx -> {
             double price = cost * amount;
-            plugin.getEconomyProvider().purchase((Player) ctx.event().getWhoClicked(), price).thenAcceptAsync(success -> {
+            Player player = (Player) ctx.event().getWhoClicked();
+            plugin.getEconomyProvider().purchase(player, price).thenAcceptAsync(success -> {
                 if (!success) {
-                    plugin.getLocalization().sendMessage(ctx.event().getWhoClicked(), "purchase.invalidFunds");
-                    Compatibility.playSound((Player) ctx.event().getWhoClicked(), plugin.getSoundConfig().get("purchase.failed"));
+                    plugin.getLocalization().sendMessage(player, "purchase.invalidFunds");
+                    Compatibility.playSound(player, plugin.getSoundConfig().get("purchase.failed"));
                     return;
                 }
 
                 ItemStack item = head.getItem();
                 item.setAmount(amount);
-                ItemFactoryRegistry.get().giveItem((Player) ctx.event().getWhoClicked(), plugin.getCfg().getOmit(), item);
-                plugin.getLocalization().sendMessage(ctx.event().getWhoClicked(), "purchase.success", msg ->
+                ItemFactoryRegistry.get().giveItem(player, plugin.getCfg().getOmit(), item);
+                plugin.getLocalization().sendMessage(player, "purchase.success", msg ->
                         msg.replaceText(builder -> builder.matchLiteral("{amount}").replacement(String.valueOf(amount)))
                                 .replaceText(builder -> builder.matchLiteral("{name}").replacement(head.getName()))
                                 .replaceText(builder -> builder.matchLiteral("{cost}").replacement(String.valueOf(price)))
                 );
-                Compatibility.playSound((Player) ctx.event().getWhoClicked(), plugin.getSoundConfig().get("purchase.completed"));
-            }, Compatibility.getMainThreadExecutor(plugin));
+                Compatibility.playSound(player, plugin.getSoundConfig().get("purchase.completed"));
+            }, Compatibility.getEntityExecutor(plugin, player));
         };
     }
 

@@ -1,7 +1,9 @@
 package com.github.thesilentpro.headdb.core.storage;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class PlayerData {
 
@@ -15,8 +17,8 @@ public class PlayerData {
         this.uniqueId = uniqueId;
         this.language = language;
         this.soundEnabled = soundEnabled;
-        this.favorites = favorites;
-        this.localFavorites = localFavorites;
+        this.favorites = new CopyOnWriteArrayList<>(favorites != null ? favorites : new ArrayList<>());
+        this.localFavorites = new CopyOnWriteArrayList<>(localFavorites != null ? localFavorites : new ArrayList<>());
     }
 
     public void addLocalFavorite(UUID uuid) {
@@ -32,7 +34,7 @@ public class PlayerData {
     }
 
     public void setLocalFavorites(List<UUID> localFavorites) {
-        this.localFavorites = localFavorites;
+        this.localFavorites = new CopyOnWriteArrayList<>(localFavorites != null ? localFavorites : new ArrayList<>());
     }
 
     public void setLanguage(String language) {
@@ -48,7 +50,7 @@ public class PlayerData {
     }
 
     public void setFavorites(List<Integer> favorites) {
-        this.favorites = favorites;
+        this.favorites = new CopyOnWriteArrayList<>(favorites != null ? favorites : new ArrayList<>());
     }
 
     public void setSoundEnabled(boolean soundEnabled) {
