@@ -161,7 +161,17 @@ public class HDBCommandSearch extends HDBSubCommand {
             }
 
             plugin.getLocalization().sendMessage(player, "command.search.found", msg -> msg.replaceText(builder -> builder.matchLiteral("{amount}").replacement(String.valueOf(heads.size()))).replaceText(builder -> builder.matchLiteral("{name}").replacement(searchResult.name)));
-            new HeadsGUI(plugin, "search_" + player.getUniqueId().toString(), plugin.getLocalization().getMessage(player.getUniqueId(), "menu.search.name").orElseGet(() -> Component.text("HeadDB » Search » " + searchResult.name)).replaceText(builder -> builder.matchLiteral("{name}").replacement(searchResult.name)), heads).open(player);
+
+            HeadsGUI gui = new HeadsGUI(
+                    plugin,
+                    "search_" + player.getUniqueId(),
+                    plugin.getLocalization().getMessage(player.getUniqueId(), "menu.search.name")
+                            .orElseGet(() -> Component.text("HeadDB » Search » " + searchResult.name))
+                            .replaceText(builder -> builder.matchLiteral("{name}").replacement(searchResult.name)),
+                    heads
+            );
+            gui.getGuiRegistry().setCurrentPage(player.getUniqueId(), gui.getKey(), 0);
+            gui.open(player);
             Compatibility.playSound(player, plugin.getSoundConfig().get("menu.open"));
         }, Compatibility.getEntityExecutor(plugin, player));
     }
