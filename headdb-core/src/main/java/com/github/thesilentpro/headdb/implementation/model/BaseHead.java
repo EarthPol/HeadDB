@@ -13,7 +13,7 @@ public class BaseHead implements Head {
     private final String texture;
     private final String category;
     private final List<String> tags;
-    private ItemStack item;
+    private volatile ItemStack item;
 
     public BaseHead(int id, String name, String texture, String category, List<String> tags) {
         this.id = id;
@@ -25,10 +25,17 @@ public class BaseHead implements Head {
 
     @Override
     public ItemStack getItem() {
-        if (this.item == null) {
-            this.item = ItemFactoryRegistry.get().asItem(this);
+        ItemStack cached = this.item;
+        if (cached == null) {
+            synchronized (this) {
+                cached = this.item;
+                if (cached == null) {
+                    cached = ItemFactoryRegistry.get().asItem(this);
+                    this.item = cached;
+                }
+            }
         }
-        return this.item.clone(); // Returns a clone of the original to avoid modifying it.
+        return cached.clone(); // Returns a clone of the original to avoid modifying it.
     }
 
     @Override

@@ -35,7 +35,7 @@ public class HDBLocalization extends PaperLocalization {
             if ((textMessage.content().isEmpty() || textMessage.content().isBlank()) && textMessage.children().isEmpty()) {
                 return;
             }
-            Compatibility.sendMessage(entity, message);
+            Compatibility.getEntityExecutor(plugin, entity).execute(() -> Compatibility.sendMessage(entity, message));
         }
     }
 

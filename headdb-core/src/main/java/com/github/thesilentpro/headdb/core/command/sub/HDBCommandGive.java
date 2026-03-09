@@ -61,22 +61,28 @@ public class HDBCommandGive extends HDBSubCommand {
                         return plugin.getHeadApi().findByTexture(id).thenApply(optional -> optional.orElse(null));
                     }
                 })
-                .thenAcceptAsync(head -> {
+                .thenAccept(head -> {
                     if (head == null) {
-                        plugin.getLocalization().sendMessage(sender, "command.give.invalidId", msg -> msg.replaceText(builder -> builder.matchLiteral("{id}").replacement(id)));
-                        Compatibility.playSound(sender, plugin.getSoundConfig().get("failed"));
+                        Compatibility.getSenderExecutor(plugin, sender).execute(() -> {
+                            plugin.getLocalization().sendMessage(sender, "command.give.invalidId", msg -> msg.replaceText(builder -> builder.matchLiteral("{id}").replacement(id)));
+                            Compatibility.playSound(sender, plugin.getSoundConfig().get("failed"));
+                        });
                         return;
                     }
-                    ItemStack item = Compatibility.setItemDetails(head.getItem(), Component.text(head.getName()));
-                    item.setAmount(fAmount);
-                    target.getInventory().addItem(item);
-                    plugin.getLocalization().sendMessage(sender, "command.give.success", msg ->
-                            msg.replaceText(builder -> builder.matchLiteral("{amount}").replacement(String.valueOf(fAmount)))
-                            .replaceText(builder -> builder.matchLiteral("{name}").replacement(head.getName()))
-                            .replaceText(builder -> builder.matchLiteral("{target}").replacement(target.getName()))
-                    );
-                    Compatibility.playSound(sender, plugin.getSoundConfig().get("success"));
-                }, Compatibility.getMainThreadExecutor(plugin));
+                    Compatibility.getEntityExecutor(plugin, target).execute(() -> {
+                        ItemStack item = Compatibility.setItemDetails(head.getItem(), Component.text(head.getName()));
+                        item.setAmount(fAmount);
+                        target.getInventory().addItem(item);
+                        Compatibility.getSenderExecutor(plugin, sender).execute(() -> {
+                            plugin.getLocalization().sendMessage(sender, "command.give.success", msg ->
+                                    msg.replaceText(builder -> builder.matchLiteral("{amount}").replacement(String.valueOf(fAmount)))
+                                            .replaceText(builder -> builder.matchLiteral("{name}").replacement(head.getName()))
+                                            .replaceText(builder -> builder.matchLiteral("{target}").replacement(target.getName()))
+                            );
+                            Compatibility.playSound(sender, plugin.getSoundConfig().get("success"));
+                        });
+                    });
+                });
     }
 
     private static final List<String> numberCompletions = List.of("1", "32", "64");
