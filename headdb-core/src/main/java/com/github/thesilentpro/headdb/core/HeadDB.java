@@ -73,7 +73,11 @@ public class HeadDB extends JavaPlugin {
 
         // Init database
         int databaseThreads = config.getDatabaseThreads();
-        this.headDatabase = new BaseHeadDatabase(Utils.executorService(databaseThreads, "Head Database Worker"), config.resolveEnabledIndexes());
+        this.headDatabase = new BaseHeadDatabase(
+                Utils.executorService(databaseThreads, "Head Database Worker"),
+                config.getDatabaseSourceUrls(),
+                config.resolveEnabledIndexes()
+        );
         this.headDatabase.update().thenAcceptAsync(heads -> DATABASE_UPDATE_ACTION.accept(config, heads), Compatibility.getMainThreadExecutor(this));
         this.headApi = new BaseHeadAPI(config.getApiThreads(), headDatabase);
         this.menuManager = new MenuManager(this);

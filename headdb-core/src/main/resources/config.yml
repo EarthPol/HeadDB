@@ -96,6 +96,10 @@ controls:
 
 # Database Configuration
 database:
+  # Primary URL used to fetch the head database JSON.
+  sourceUrl: "https://raw.githubusercontent.com/TheSilentPro/heads/refs/heads/main/heads.json"
+  # Optional fallback URLs that are tried in order if the primary source fails.
+  fallbackSourceUrls: []
   # Threads pool for the database
   threads: 1
   # Threads pool for the API

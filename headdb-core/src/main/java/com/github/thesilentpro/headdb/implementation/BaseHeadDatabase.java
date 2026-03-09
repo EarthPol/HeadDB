@@ -15,9 +15,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
@@ -28,7 +28,9 @@ public class BaseHeadDatabase implements HeadDatabase {
     private static final Logger LOGGER = LoggerFactory.getLogger(BaseHeadDatabase.class);
 
     private static final Gson GSON = new GsonBuilder().registerTypeAdapter(Head.class, new HeadMapper()).create();
+    private static final String DEFAULT_SOURCE_URL = "https://raw.githubusercontent.com/TheSilentPro/heads/refs/heads/main/heads.json";
     private final Executor executor;
+    private final List<String> sourceUrls;
 
     // Non-indexed
     private volatile List<Head> heads = null;
@@ -43,9 +45,14 @@ public class BaseHeadDatabase implements HeadDatabase {
     // track the latest load
     private volatile CompletableFuture<List<Head>> lastUpdateFuture;
 
-    public BaseHeadDatabase(@Nullable Executor executor, @Nullable Index... indexes) {
+    public BaseHeadDatabase(@Nullable Executor executor, @Nullable List<String> sourceUrls, @Nullable Index... indexes) {
         this.executor = executor != null ? executor : Executors.newSingleThreadExecutor(r -> new Thread(r, "Head Database Worker"));
+        this.sourceUrls = normalizeSourceUrls(sourceUrls);
         this.indexes = indexes;
+    }
+
+    public BaseHeadDatabase(@Nullable Executor executor, @Nullable Index... indexes) {
+        this(executor, null, indexes);
     }
 
     public BaseHeadDatabase(@Nullable Executor executor) {
@@ -69,114 +76,168 @@ public class BaseHeadDatabase implements HeadDatabase {
         lastUpdateFuture = CompletableFuture.supplyAsync(() -> {
             LOGGER.debug("Fetching heads...");
             long start = System.currentTimeMillis();
+            Exception lastException = null;
 
-            try {
-                URL url = URI.create("https://raw.githubusercontent.com/TheSilentPro/heads/refs/heads/main/heads.json").toURL();
-                HttpURLConnection request = (HttpURLConnection) url.openConnection();
-                request.setRequestProperty("Accept", "application/json");
-                request.setRequestProperty("Accept-Encoding", "gzip");
+            for (String sourceUrl : sourceUrls) {
+                try {
+                    List<Head> loadedHeads = fetchHeads(sourceUrl);
+                    if (loadedHeads == null) {
+                        continue;
+                    }
 
-                long connectStart = System.currentTimeMillis();
-                request.connect();
-                long connectTime = System.currentTimeMillis() - connectStart;
-                LOGGER.debug("Connected in {}ms (Response code: {})", connectTime, request.getResponseCode());
+                    this.heads = loadedHeads;
+                    rebuildIndexes();
 
-                if (request.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                    LOGGER.error("Failed to fetch data. HTTP Response Code: {}", request.getResponseCode());
-                    return Collections.emptyList();
+                    long elapsed = System.currentTimeMillis() - start;
+                    LOGGER.debug("Update took {} seconds ({}ms total)", TimeUnit.MILLISECONDS.toSeconds(elapsed), elapsed);
+                    return Collections.unmodifiableList(this.heads);
+                } catch (IOException | IllegalArgumentException ex) {
+                    lastException = ex;
+                    LOGGER.warn("Failed to fetch heads from '{}': {}", sourceUrl, ex.getMessage());
+                    LOGGER.debug("Detailed error while fetching heads from '{}'", sourceUrl, ex);
                 }
+            }
 
-                InputStream raw = request.getInputStream();
-                InputStream in = request.getContentEncoding().equalsIgnoreCase("gzip") ? new GZIPInputStream(raw) : raw;
+            if (lastException != null) {
+                LOGGER.error("Failed to update heads from all configured sources.");
+                throw new CompletionException("Failed to update heads", lastException);
+            }
 
-                long readStart = System.currentTimeMillis();
-                BufferedReader reader = new BufferedReader(new InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8), 8192);
-                StringBuilder rawData = new StringBuilder();
+            LOGGER.error("Failed to update heads from all configured sources.");
+            return Collections.emptyList();
+        }, executor);
+
+        return lastUpdateFuture;
+    }
+
+    private @Nullable List<Head> fetchHeads(String sourceUrl) throws IOException {
+        URL url = URI.create(sourceUrl).toURL();
+        HttpURLConnection request = (HttpURLConnection) url.openConnection();
+        request.setRequestProperty("Accept", "application/json");
+        request.setRequestProperty("Accept-Encoding", "gzip");
+
+        try {
+            long connectStart = System.currentTimeMillis();
+            request.connect();
+            int responseCode = request.getResponseCode();
+            long connectTime = System.currentTimeMillis() - connectStart;
+            LOGGER.debug("Connected to '{}' in {}ms (Response code: {})", sourceUrl, connectTime, responseCode);
+
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                LOGGER.error("Failed to fetch data from '{}'. HTTP Response Code: {}", sourceUrl, responseCode);
+                return null;
+            }
+
+            long readStart = System.currentTimeMillis();
+            StringBuilder rawData = new StringBuilder();
+            int lineCount = 0;
+
+            try (InputStream raw = request.getInputStream();
+                 InputStream in = "gzip".equalsIgnoreCase(request.getContentEncoding()) ? new GZIPInputStream(raw) : raw;
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8), 8192)) {
                 String line;
-                int lineCount = 0;
                 while ((line = reader.readLine()) != null) {
                     rawData.append(line);
                     lineCount++;
                 }
-                long readTime = System.currentTimeMillis() - readStart;
-                LOGGER.debug("Finished reading {} lines in {}ms", lineCount, readTime);
-
-                long parseStart = System.currentTimeMillis();
-                try {
-                    this.heads = GSON.fromJson(rawData.toString(), HeadMapper.HEADS_LIST_TYPE);
-                    LOGGER.debug("Parsed {} heads", heads.size());
-                } catch (Exception ex) {
-                    LOGGER.error("Failed to parse fetched JSON!", ex);
-                    return Collections.emptyList();
-                }
-                long parseTime = System.currentTimeMillis() - parseStart;
-
-                // Indexing
-                if (indexes != null) {
-                    LOGGER.debug("Indexing heads...");
-                    long indexStart = System.currentTimeMillis();
-
-                    if (hasIndex(Index.ID)) {
-                        this.byId = this.heads.stream().collect(Collectors.toMap(Head::getId, h -> h));
-                        LOGGER.debug("Index by ID completed");
-                    }
-
-                    if (hasIndex(Index.TEXTURE)) {
-                        this.byTexture = this.heads.stream().collect(Collectors.toMap(Head::getTexture, h -> h));
-                        LOGGER.debug("Index by Texture completed");
-                    }
-
-                    if (hasIndex(Index.CATEGORY)) {
-                        Map<String, List<Head>> rawCat = this.heads.stream().collect(Collectors.groupingBy(Head::getCategory));
-                        this.byCategory = rawCat.entrySet().stream()
-                                .collect(Collectors.toMap(
-                                        Map.Entry::getKey,
-                                        e -> Collections.unmodifiableList(e.getValue())
-                                ));
-                        LOGGER.debug("Index by Category completed");
-                    }
-
-                    if (hasIndex(Index.TAG)) {
-                        Map<String, List<Head>> tagBuilder = new HashMap<>();
-                        for (Head head : this.heads) {
-                            for (String tag : head.getTags()) {
-                                tagBuilder
-                                        .computeIfAbsent(tag, k -> new ArrayList<>())
-                                        .add(head);
-                            }
-                        }
-                        this.byTag = tagBuilder.entrySet().stream()
-                                .collect(Collectors.toMap(
-                                        Map.Entry::getKey,
-                                        e -> Collections.unmodifiableList(e.getValue())
-                                ));
-                        LOGGER.debug("Index by Tag completed");
-                    }
-
-                    long indexTime = System.currentTimeMillis() - indexStart;
-                    LOGGER.debug("Indexing completed in {}ms", indexTime);
-                }
-
-                long elapsed = System.currentTimeMillis() - start;
-                LOGGER.debug("Update took {} seconds ({}ms total, read={}, parse={}, index={})",
-                        TimeUnit.MILLISECONDS.toSeconds(elapsed),
-                        elapsed,
-                        readTime,
-                        parseTime,
-                        (System.currentTimeMillis() - start) - readTime - parseTime);
-
-                return Collections.unmodifiableList(this.heads);
-
-            } catch (MalformedURLException ex) {
-                LOGGER.error("Malformed URL!", ex);
-                throw new CompletionException("Malformed URL", ex);
-            } catch (IOException ex) {
-                LOGGER.error("Failed to update heads!", ex);
-                throw new CompletionException("Failed to update heads", ex);
             }
-        }, executor);
 
-        return lastUpdateFuture;
+            long readTime = System.currentTimeMillis() - readStart;
+            LOGGER.debug("Finished reading {} lines from '{}' in {}ms", lineCount, sourceUrl, readTime);
+
+            long parseStart = System.currentTimeMillis();
+            List<Head> fetchedHeads;
+            try {
+                fetchedHeads = GSON.fromJson(rawData.toString(), HeadMapper.HEADS_LIST_TYPE);
+            } catch (Exception ex) {
+                LOGGER.error("Failed to parse fetched JSON from '{}'!", sourceUrl, ex);
+                return null;
+            }
+
+            if (fetchedHeads == null) {
+                LOGGER.error("Source '{}' returned an empty payload.", sourceUrl);
+                return null;
+            }
+
+            long parseTime = System.currentTimeMillis() - parseStart;
+            LOGGER.debug("Parsed {} heads from '{}' in {}ms", fetchedHeads.size(), sourceUrl, parseTime);
+            return fetchedHeads;
+        } finally {
+            request.disconnect();
+        }
+    }
+
+    private void rebuildIndexes() {
+        if (indexes == null) {
+            return;
+        }
+
+        LOGGER.debug("Indexing heads...");
+        long indexStart = System.currentTimeMillis();
+
+        if (hasIndex(Index.ID)) {
+            this.byId = this.heads.stream().collect(Collectors.toMap(Head::getId, h -> h));
+            LOGGER.debug("Index by ID completed");
+        }
+
+        if (hasIndex(Index.TEXTURE)) {
+            this.byTexture = this.heads.stream().collect(Collectors.toMap(Head::getTexture, h -> h));
+            LOGGER.debug("Index by Texture completed");
+        }
+
+        if (hasIndex(Index.CATEGORY)) {
+            Map<String, List<Head>> rawCat = this.heads.stream().collect(Collectors.groupingBy(Head::getCategory));
+            this.byCategory = rawCat.entrySet().stream()
+                    .collect(Collectors.toMap(
+                            Map.Entry::getKey,
+                            e -> Collections.unmodifiableList(e.getValue())
+                    ));
+            LOGGER.debug("Index by Category completed");
+        }
+
+        if (hasIndex(Index.TAG)) {
+            Map<String, List<Head>> tagBuilder = new HashMap<>();
+            for (Head head : this.heads) {
+                for (String tag : head.getTags()) {
+                    tagBuilder
+                            .computeIfAbsent(tag, k -> new ArrayList<>())
+                            .add(head);
+                }
+            }
+            this.byTag = tagBuilder.entrySet().stream()
+                    .collect(Collectors.toMap(
+                            Map.Entry::getKey,
+                            e -> Collections.unmodifiableList(e.getValue())
+                    ));
+            LOGGER.debug("Index by Tag completed");
+        }
+
+        long indexTime = System.currentTimeMillis() - indexStart;
+        LOGGER.debug("Indexing completed in {}ms", indexTime);
+    }
+
+    private static List<String> normalizeSourceUrls(@Nullable List<String> sourceUrls) {
+        if (sourceUrls == null || sourceUrls.isEmpty()) {
+            return List.of(DEFAULT_SOURCE_URL);
+        }
+
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String source : sourceUrls) {
+            if (source == null) {
+                continue;
+            }
+
+            String trimmed = source.trim();
+            if (!trimmed.isEmpty()) {
+                normalized.add(trimmed);
+            }
+        }
+
+        if (normalized.isEmpty()) {
+            return List.of(DEFAULT_SOURCE_URL);
+        }
+
+        return List.copyOf(normalized);
     }
 
 

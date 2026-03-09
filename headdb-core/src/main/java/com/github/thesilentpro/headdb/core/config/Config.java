@@ -23,6 +23,7 @@ public class Config {
     private static final Logger LOGGER = LoggerFactory.getLogger(Config.class);
 
     // === Default Head Textures ===
+    private static final String DEFAULT_DATABASE_SOURCE_URL = "https://raw.githubusercontent.com/TheSilentPro/heads/refs/heads/main/heads.json";
     private static final String DEFAULT_BACK_TEXTURE = "e5da4847272582265bdaca367237c96122b139f4e597fbc6667d3fb75fea7cf6";
     private static final String DEFAULT_INFO_TEXTURE = "93e5cb83cfdf42e9c4d8a3ecb4f889f6a5f418dce0a894c97e416a0eaf0d58";
     private static final String DEFAULT_NEXT_TEXTURE = "62bfb7ed2bd9f1d1f85c3d6ffb1626f252c5ecfd79d51a3f56ebf8e0c3c91";
@@ -38,6 +39,7 @@ public class Config {
     private boolean preloadHeads, trackPage, updaterEnabled;
     private int maxBuyAmount;
     private List<Integer> omit;
+    private List<String> databaseSourceUrls = List.of(DEFAULT_DATABASE_SOURCE_URL);
 
     // Indexing
     private boolean indexingEnabled, indexById, indexByTexture, indexByCategory, indexByTag;
@@ -82,6 +84,7 @@ public class Config {
         apiThreads = config.getInt("database.apiThreads", 1);
         maxBuyAmount = config.getInt("maxBuyAmount", 2304);
         omit = config.getIntegerList("head.omit");
+        loadDatabaseSources();
 
         LOGGER.trace("Loaded General Config:");
         LOGGER.trace(" - playerStorageSaveInterval = {}", playerStorageSaveInterval);
@@ -90,7 +93,38 @@ public class Config {
         LOGGER.trace(" - preloadHeads = {}", preloadHeads);
         LOGGER.trace(" - databaseThreads = {}", databaseThreads);
         LOGGER.trace(" - apiThreads = {}", apiThreads);
+        LOGGER.trace(" - databaseSourceUrls = {}", databaseSourceUrls);
         LOGGER.trace(" - maxBuyAmount = {}", maxBuyAmount);
+    }
+
+    private void loadDatabaseSources() {
+        String primarySource = config.getString("database.sourceUrl", DEFAULT_DATABASE_SOURCE_URL);
+        List<String> fallbackSources = config.getStringList("database.fallbackSourceUrls");
+
+        LinkedHashSet<String> orderedSources = new LinkedHashSet<>();
+
+        if (primarySource != null) {
+            String trimmed = primarySource.trim();
+            if (!trimmed.isEmpty()) {
+                orderedSources.add(trimmed);
+            }
+        }
+
+        for (String source : fallbackSources) {
+            if (source == null) {
+                continue;
+            }
+            String trimmed = source.trim();
+            if (!trimmed.isEmpty()) {
+                orderedSources.add(trimmed);
+            }
+        }
+
+        if (orderedSources.isEmpty()) {
+            orderedSources.add(DEFAULT_DATABASE_SOURCE_URL);
+        }
+
+        databaseSourceUrls = List.copyOf(orderedSources);
     }
 
     private void loadIndexing() {
@@ -306,6 +340,7 @@ public class Config {
     public boolean isUpdaterEnabled() { return updaterEnabled; }
     public int getDatabaseThreads() { return databaseThreads; }
     public int getApiThreads() { return apiThreads; }
+    public List<String> getDatabaseSourceUrls() { return databaseSourceUrls; }
     public int getMaxBuyAmount() { return maxBuyAmount; }
     public List<Integer> getOmit() { return omit; }
 
